@@ -1,26 +1,28 @@
-name: Sync Upstream and Nightly Build
+name: Sync Latest Release and Build
 
 on:
   schedule:
-    - cron: '0 2 * * *' # Täglich um 02:00 Uhr
-  workflow_dispatch: # Ermöglicht manuelles Starten per Klick
+    - cron: '0 3 * * *' # Täglich um 03:00 Uhr
+  workflow_dispatch: # Manueller Start möglich
 
 jobs:
-  sync:
+  sync-and-build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Sync with Upstream
-        run: |
-          gh repo sync ${{ github.repository }} -b master
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout Fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Wichtig, um alle Tags zu erhalten
 
-  build:
-    needs: sync
-    # Hier rufen wir den Original-Build-Workflow von RustDesk auf
-    uses: ./.github/workflows/flutter-build.yml
-    with:
-      upload-artifact: true
-      upload-tag: "nightly"
+      - name: Get latest release tag from Upstream
+        id: get_tag
+        run: |
+          # Holt den Namen des neuesten Release-Tags vom Original-Repo
+          LATEST_TAG=$(curl -s api.github.com | jq -r .tag_name)
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+      - name: Sync and Checkout Tag
+        run: |
+          git remote add upstream 
