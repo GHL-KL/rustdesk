@@ -5,7 +5,6 @@ on:
     - cron: '0 3 * * *'
   workflow_dispatch:
 
-# Diese Berechtigungen sind entscheidend für den Sync von Workflows
 permissions:
   contents: write
   actions: write
@@ -29,13 +28,24 @@ jobs:
           echo "Target Tag: $LATEST_TAG"
 
           # 2. Den Fork-Master synchronisieren
-          # Das Token hat nun durch 'actions: write' die Erlaubnis, Workflows zu überschreiben
           gh repo sync ${{ github.repository }} --source rustdesk/rustdesk --branch master
           
           # 3. Lokalen Stand aktualisieren
           git fetch origin master
           git checkout master
           git reset --hard origin/master
+
+          # --- NEU: FEHLERHAFTE TARGETS DEAKTIVIEREN ---
+          # Dies fügt 'if: false' in die Jobs ein, die macos-13 (retired) nutzen
+          sed -i '/build-rustdesk-ios:/a \    if: false' .github/workflows/flutter-build.yml
+          sed -i '/x86_64-apple-darwin:/a \    if: false' .github/workflows/flutter-build.yml
+          
+          # Änderungen committen und in den Fork zurückschieben
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/flutter-build.yml
+          git commit -m "ci: disable retired macos-13 builds to prevent error emails" || echo "No changes to commit"
+          git push origin master --force
 
   build:
     needs: sync-and-build
