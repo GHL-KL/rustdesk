@@ -1,63 +1,9 @@
-name: Sync Latest Release and Build
-
-on:
-  schedule:
-    - cron: '0 3 * * *'
-  workflow_dispatch:
-
-permissions:
-  contents: write
-  actions: write
-
-jobs:
-  sync-and-build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Fork
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.SYNC_TOKEN_RUSTDESK }}
-
-      - name: Sync Master to Latest Upstream Tag
-        env:
-          GH_TOKEN: ${{ secrets.SYNC_TOKEN_RUSTDESK }}
-        run: |
-          # 1. Neuesten Release-Tag abrufen
-          LATEST_TAG=$(gh api repos/rustdesk/rustdesk/releases/latest --jq .tag_name)
-          echo "Target Tag: $LATEST_TAG"
-
-          # 2. Den Fork-Master synchronisieren
-          gh repo sync ${{ github.repository }} --source rustdesk/rustdesk --branch master
-          
-          # 3. Lokalen Stand aktualisieren
-          git fetch origin master
-          git checkout master
-          git reset --hard origin/master
-
-          # --- RADIKALER FIX: Problematische Jobs komplett löschen ---
-          # Wir nutzen eine temporäre Datei, um die Jobs sauber zu entfernen.
-          # Wir löschen die Blöcke 'build-rustdesk-ios' und 'x86_64-apple-darwin'
-          # inklusive ihrer Einrückungen bis zum nächsten Job.
-          
-          # Dieser Befehl löscht alles ab dem Job-Namen bis zum nächsten Job auf gleicher Ebene.
-          sed -i '/build-rustdesk-ios:/,/^[[:space:]]\{2\}[a-zA-Z]/ { /build-rustdesk-ios:/! { /^[[:space:]]\{2\}[a-zA-Z]/! d } }' .github/workflows/flutter-build.yml
-          sed -i '/x86_64-apple-darwin:/,/^[[:space:]]\{2\}[a-zA-Z]/ { /x86_64-apple-darwin:/! { /^[[:space:]]\{2\}[a-zA-Z]/! d } }' .github/workflows/flutter-build.yml
-
-          # Wir benennen die Start-Tags um, damit sie keine Inhalte mehr haben und ignoriert werden
-          sed -i 's/build-rustdesk-ios:/deleted-ios: { if: false }/g' .github/workflows/flutter-build.yml
-          sed -i 's/x86_64-apple-darwin:/deleted-macos: { if: false }/g' .github/workflows/flutter-build.yml
-
-          # 4. Änderungen committen und pushen
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .github/workflows/flutter-build.yml
-          git commit -m "ci: removed failing apple jobs to fix yaml parsing" || echo "No changes"
-          git push origin master --force
-
-  build:
-    needs: sync-and-build
-    uses: ./.github/workflows/flutter-build.yml
-    with:
-      upload-artifact: true
-      upload-tag: "latest-release"
+build:
+  needs: sync-and-build
+  uses: ./.github/workflows/flutter-build.yml
+  with:
+    build-linux: true
+    build-windows: true
+    build-android: true
+    build-macos: false
+    build-ios: false
