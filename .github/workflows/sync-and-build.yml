@@ -6,24 +6,38 @@ on:
   workflow_dispatch:
 
 jobs:
-  get-latest-tag:
+  sync-tag-to-master:
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.set_tag.outputs.tag }}
+    permissions:
+      contents: write
     steps:
-      - id: set_tag
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync Fork to Latest Tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Ermittelt den neuesten Release-Tag von RustDesk
+          # 1. Neuesten Release-Tag von RustDesk abrufen
           LATEST_TAG=$(curl -s api.github.com | jq -r .tag_name)
-          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "Syncing to Tag: $LATEST_TAG"
+          
+          # 2. Git Konfiguration für den Push
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 3. Upstream hinzufügen, fetch und hart auf Tag zurücksetzen
+          git remote add upstream github.com && \
+          git fetch upstream --tags && \
+          git checkout master && \
+          git reset --hard $LATEST_TAG && \
+          git push origin master --force
 
   build:
-    needs: get-latest-tag
-    # Wir rufen den Build-Workflow direkt mit dem gefundenen Tag auf
-    uses: rustdesk/rustdesk/.github/workflows/flutter-build.yml@master
+    needs: sync-tag-to-master
+    uses: ./.github/workflows/flutter-build.yml
     with:
-      # Hier sagen wir dem Build-Workflow, welchen Stand er bauen soll
       upload-artifact: true
       upload-tag: "latest-release"
-    # WICHTIG: Falls der Workflow von RustDesk 'ref' nicht als Input akzeptiert,
-    # bauen wir den Stand Ihres geklonten Tags.
