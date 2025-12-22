@@ -6,38 +6,27 @@ on:
   workflow_dispatch:
 
 jobs:
-  sync-tag-to-master:
+  sync-tag:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout
+      - name: Checkout Fork
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Sync Fork to Latest Tag
+      - name: Sync Master to Latest Upstream Tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 1. Neuesten Release-Tag von RustDesk abrufen
-          LATEST_TAG=$(curl -s api.github.com | jq -r .tag_name)
-          echo "Syncing to Tag: $LATEST_TAG"
-          
-          # 2. Git Konfiguration für den Push
+          # 1. Neuesten Release-Tag sicher abrufen
+          LATEST_TAG=$(gh api repos/rustdesk/rustdesk/releases/latest --jq .tag_name)
+          echo "Target Tag: $LATEST_TAG"
+
+          # 2. Git Identität setzen
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # 3. Upstream hinzufügen, fetch und hart auf Tag zurücksetzen
-          git remote add upstream github.com && \
-          git fetch upstream --tags && \
-          git checkout master && \
-          git reset --hard $LATEST_TAG && \
-          git push origin master --force
 
-  build:
-    needs: sync-tag-to-master
-    uses: ./.github/workflows/flutter-build.yml
-    with:
-      upload-artifact: true
-      upload-tag: "latest-release"
+          # 3. Upstream hinzufügen und Master auf Tag zwingen
+          git remote add upstream 
