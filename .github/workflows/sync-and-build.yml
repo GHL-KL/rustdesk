@@ -1,0 +1,26 @@
+name: Sync Upstream and Nightly Build
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Täglich um 02:00 Uhr
+  workflow_dispatch: # Ermöglicht manuelles Starten per Klick
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Sync with Upstream
+        run: |
+          gh repo sync ${{ github.repository }} -b master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    needs: sync
+    # Hier rufen wir den Original-Build-Workflow von RustDesk auf
+    uses: ./.github/workflows/flutter-build.yml
+    with:
+      upload-artifact: true
+      upload-tag: "nightly"
