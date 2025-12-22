@@ -2,8 +2,8 @@ name: Sync Latest Release and Build
 
 on:
   schedule:
-    - cron: '0 3 * * *'
-  workflow_dispatch:
+    - cron: '0 3 * * *' # Täglich um 03:00 Uhr
+  workflow_dispatch: # Ermöglicht manuellen Start per Klick
 
 permissions:
   contents: write
@@ -23,35 +23,29 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.SYNC_TOKEN_RUSTDESK }}
         run: |
-          # 1. Neuesten Release-Tag abrufen
+          # 1. Neuesten Release-Tag von RustDesk abrufen (z.B. 1.4.4)
           LATEST_TAG=$(gh api repos/rustdesk/rustdesk/releases/latest --jq .tag_name)
           echo "Target Tag: $LATEST_TAG"
 
-          # 2. Den Fork-Master synchronisieren
+          # 2. Den Fork-Master mit dem Original synchronisieren
           gh repo sync ${{ github.repository }} --source rustdesk/rustdesk --branch master
           
-          # 3. Lokalen Stand aktualisieren
+          # 3. Lokalen Stand auf den exakten Tag setzen
           git fetch origin master
           git checkout master
           git reset --hard origin/master
 
-          # --- ABSOLUT SICHERER PATCH ---
-          # Wir löschen JEDE Zeile, die mit 'if:' beginnt, innerhalb der problematischen Jobs
-          # und setzen dann ein sauberes 'if: false' direkt unter den Job-Namen.
+          # 4. FEHLERHAFTE APPLE-TARGETS DEAKTIVIEREN
+          # Wir benennen die Jobs um und setzen 'if: false', um YAML-Syntaxfehler 
+          # mit bereits vorhandenen 'if'-Bedingungen zu vermeiden.
+          sed -i 's/build-rustdesk-ios:/disabled-ios:\n    if: false/g' .github/workflows/flutter-build.yml
+          sed -i 's/x86_64-apple-darwin:/disabled-macos:\n    if: false/g' .github/workflows/flutter-build.yml
           
-          # Patch für iOS
-          sed -i '/build-rustdesk-ios:/,/runs-on:/ { /if:/d }' .github/workflows/flutter-build.yml
-          sed -i '/build-rustdesk-ios:/a \    if: false' .github/workflows/flutter-build.yml
-          
-          # Patch für macOS (Darwin)
-          sed -i '/x86_64-apple-darwin:/,/runs-on:/ { /if:/d }' .github/workflows/flutter-build.yml
-          sed -i '/x86_64-apple-darwin:/a \    if: false' .github/workflows/flutter-build.yml
-          
-          # 4. Änderungen committen
+          # 5. Änderungen committen und zurück in den Fork pushen
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .github/workflows/flutter-build.yml
-          git commit -m "ci: hard disable failing apple jobs" || echo "No changes"
+          git commit -m "ci: disable retired macos-13 builds to prevent error emails" || echo "No changes"
           git push origin master --force
 
   build:
