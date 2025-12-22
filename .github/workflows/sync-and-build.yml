@@ -2,27 +2,28 @@ name: Sync Latest Release and Build
 
 on:
   schedule:
-    - cron: '0 3 * * *' # Täglich um 03:00 Uhr
-  workflow_dispatch: # Manueller Start möglich
+    - cron: '0 3 * * *'
+  workflow_dispatch:
 
 jobs:
-  sync-and-build:
+  get-latest-tag:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    outputs:
+      tag: ${{ steps.set_tag.outputs.tag }}
     steps:
-      - name: Checkout Fork
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Wichtig, um alle Tags zu erhalten
-
-      - name: Get latest release tag from Upstream
-        id: get_tag
+      - id: set_tag
         run: |
-          # Holt den Namen des neuesten Release-Tags vom Original-Repo
+          # Ermittelt den neuesten Release-Tag von RustDesk
           LATEST_TAG=$(curl -s api.github.com | jq -r .tag_name)
           echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
 
-      - name: Sync and Checkout Tag
-        run: |
-          git remote add upstream 
+  build:
+    needs: get-latest-tag
+    # Wir rufen den Build-Workflow direkt mit dem gefundenen Tag auf
+    uses: rustdesk/rustdesk/.github/workflows/flutter-build.yml@master
+    with:
+      # Hier sagen wir dem Build-Workflow, welchen Stand er bauen soll
+      upload-artifact: true
+      upload-tag: "latest-release"
+    # WICHTIG: Falls der Workflow von RustDesk 'ref' nicht als Input akzeptiert,
+    # bauen wir den Stand Ihres geklonten Tags.
