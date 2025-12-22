@@ -18,10 +18,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN_RUSTDESK }}
 
       - name: Sync Master to Latest Upstream Tag
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN_RUSTDESK }}
         run: |
           # 1. Neuesten Release-Tag von RustDesk abrufen
           LATEST_TAG=$(gh api repos/rustdesk/rustdesk/releases/latest --jq .tag_name)
