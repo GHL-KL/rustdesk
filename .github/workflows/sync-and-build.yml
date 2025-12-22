@@ -50,10 +50,3 @@ jobs:
     with:
       upload-artifact: true
       upload-tag: "latest-release"
-
-      # === BUILD SWITCHES ===
-      build-linux: true
-      build-windows: true
-      build-android: true
-      build-macos: false
-      build-ios: false
