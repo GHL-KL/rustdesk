@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  sync-tag:
+  sync-and-build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -20,13 +20,23 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 1. Neuesten Release-Tag sicher abrufen
+          # 1. Neuesten Release-Tag von RustDesk abrufen
           LATEST_TAG=$(gh api repos/rustdesk/rustdesk/releases/latest --jq .tag_name)
           echo "Target Tag: $LATEST_TAG"
 
-          # 2. Git Identität setzen
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # 2. Den Fork-Master direkt via GitHub API auf den Stand des Upstream-Tags setzen
+          # Dies vermeidet lokale Git-Fehler komplett
+          gh repo sync ${{ github.repository }} --source rustdesk/rustdesk --branch master
+          
+          # 3. Den lokalen Stand für den Build vorbereiten
+          git fetch origin master
+          git checkout master
+          git reset --hard origin/master
 
-          # 3. Upstream hinzufügen und Master auf Tag zwingen
-          git remote add upstream 
+  # Dieser Job startet den eigentlichen Build
+  build:
+    needs: sync-and-build
+    uses: ./.github/workflows/flutter-build.yml
+    with:
+      upload-artifact: true
+      upload-tag: "latest-release"
