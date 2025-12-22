@@ -35,16 +35,23 @@ jobs:
           git checkout master
           git reset --hard origin/master
 
-          # --- NEU: FEHLERHAFTE TARGETS DEAKTIVIEREN ---
-          # Dies fügt 'if: false' in die Jobs ein, die macos-13 (retired) nutzen
+          # --- FIX: Vorhandene 'if'-Zeilen entfernen und durch 'if: false' ersetzen ---
+          # Wir suchen den Job-Namen und löschen die unmittelbar folgende 'if'-Zeile, 
+          # um Duplikate zu vermeiden, bevor wir unser eigenes 'if: false' einfügen.
+          
+          # Patch für iOS
+          sed -i '/build-rustdesk-ios:/{n; /if:/d; }' .github/workflows/flutter-build.yml
           sed -i '/build-rustdesk-ios:/a \    if: false' .github/workflows/flutter-build.yml
+          
+          # Patch für macOS (Darwin)
+          sed -i '/x86_64-apple-darwin:/{n; /if:/d; }' .github/workflows/flutter-build.yml
           sed -i '/x86_64-apple-darwin:/a \    if: false' .github/workflows/flutter-build.yml
           
-          # Änderungen committen und in den Fork zurückschieben
+          # 4. Änderungen committen und in den Fork zurückschieben
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .github/workflows/flutter-build.yml
-          git commit -m "ci: disable retired macos-13 builds to prevent error emails" || echo "No changes to commit"
+          git commit -m "ci: fix invalid yaml and disable retired macos-13 builds" || echo "No changes to commit"
           git push origin master --force
 
   build:
