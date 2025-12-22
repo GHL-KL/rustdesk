@@ -5,11 +5,14 @@ on:
     - cron: '0 3 * * *'
   workflow_dispatch:
 
+# Diese Berechtigungen sind entscheidend für den Sync von Workflows
+permissions:
+  contents: write
+  actions: write
+
 jobs:
   sync-and-build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout Fork
         uses: actions/checkout@v4
@@ -24,16 +27,15 @@ jobs:
           LATEST_TAG=$(gh api repos/rustdesk/rustdesk/releases/latest --jq .tag_name)
           echo "Target Tag: $LATEST_TAG"
 
-          # 2. Den Fork-Master direkt via GitHub API auf den Stand des Upstream-Tags setzen
-          # Dies vermeidet lokale Git-Fehler komplett
+          # 2. Den Fork-Master synchronisieren
+          # Das Token hat nun durch 'actions: write' die Erlaubnis, Workflows zu überschreiben
           gh repo sync ${{ github.repository }} --source rustdesk/rustdesk --branch master
           
-          # 3. Den lokalen Stand für den Build vorbereiten
+          # 3. Lokalen Stand aktualisieren
           git fetch origin master
           git checkout master
           git reset --hard origin/master
 
-  # Dieser Job startet den eigentlichen Build
   build:
     needs: sync-and-build
     uses: ./.github/workflows/flutter-build.yml
