@@ -2,8 +2,8 @@ name: Sync Latest Release and Build
 
 on:
   schedule:
-    - cron: '0 3 * * *' # Täglich um 03:00 Uhr
-  workflow_dispatch: # Ermöglicht manuellen Start per Klick
+    - cron: '0 3 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -23,29 +23,36 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.SYNC_TOKEN_RUSTDESK }}
         run: |
-          # 1. Neuesten Release-Tag von RustDesk abrufen (z.B. 1.4.4)
+          # 1. Neuesten Release-Tag abrufen
           LATEST_TAG=$(gh api repos/rustdesk/rustdesk/releases/latest --jq .tag_name)
           echo "Target Tag: $LATEST_TAG"
 
-          # 2. Den Fork-Master mit dem Original synchronisieren
+          # 2. Den Fork-Master synchronisieren
           gh repo sync ${{ github.repository }} --source rustdesk/rustdesk --branch master
           
-          # 3. Lokalen Stand auf den exakten Tag setzen
+          # 3. Lokalen Stand aktualisieren
           git fetch origin master
           git checkout master
           git reset --hard origin/master
 
-          # 4. FEHLERHAFTE APPLE-TARGETS DEAKTIVIEREN
-          # Wir benennen die Jobs um und setzen 'if: false', um YAML-Syntaxfehler 
-          # mit bereits vorhandenen 'if'-Bedingungen zu vermeiden.
-          sed -i 's/build-rustdesk-ios:/disabled-ios:\n    if: false/g' .github/workflows/flutter-build.yml
-          sed -i 's/x86_64-apple-darwin:/disabled-macos:\n    if: false/g' .github/workflows/flutter-build.yml
+          # --- RADIKALER FIX: Problematische Jobs komplett löschen ---
+          # Wir nutzen eine temporäre Datei, um die Jobs sauber zu entfernen.
+          # Wir löschen die Blöcke 'build-rustdesk-ios' und 'x86_64-apple-darwin'
+          # inklusive ihrer Einrückungen bis zum nächsten Job.
           
-          # 5. Änderungen committen und zurück in den Fork pushen
+          # Dieser Befehl löscht alles ab dem Job-Namen bis zum nächsten Job auf gleicher Ebene.
+          sed -i '/build-rustdesk-ios:/,/^[[:space:]]\{2\}[a-zA-Z]/ { /build-rustdesk-ios:/! { /^[[:space:]]\{2\}[a-zA-Z]/! d } }' .github/workflows/flutter-build.yml
+          sed -i '/x86_64-apple-darwin:/,/^[[:space:]]\{2\}[a-zA-Z]/ { /x86_64-apple-darwin:/! { /^[[:space:]]\{2\}[a-zA-Z]/! d } }' .github/workflows/flutter-build.yml
+
+          # Wir benennen die Start-Tags um, damit sie keine Inhalte mehr haben und ignoriert werden
+          sed -i 's/build-rustdesk-ios:/deleted-ios: { if: false }/g' .github/workflows/flutter-build.yml
+          sed -i 's/x86_64-apple-darwin:/deleted-macos: { if: false }/g' .github/workflows/flutter-build.yml
+
+          # 4. Änderungen committen und pushen
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .github/workflows/flutter-build.yml
-          git commit -m "ci: disable retired macos-13 builds to prevent error emails" || echo "No changes"
+          git commit -m "ci: removed failing apple jobs to fix yaml parsing" || echo "No changes"
           git push origin master --force
 
   build:
