@@ -2063,34 +2063,35 @@ jobs:
           tag_name: ${{ env.TAG_NAME }}
           files: |
             flutter/build/rustdesk-${{ env.VERSION }}-${{ env.RELEASE_NAME }}.tar.gz
-create-release:
-  name: Create GitHub Release
-  runs-on: ubuntu-latest
-  # Dieser Job benötigt alle anderen Build-Jobs, um zu starten
-  needs: [build-for-windows-flutter, build-rustdesk-android, build-for-linux-flutter, ...] 
-  # Nur ausführen, wenn ein Git-Tag gepusht wurde
-  if: startsWith(github.ref, 'refs/tags/') 
-  steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
 
-    # LADEN SIE ALLE ARTEFAKTE HERUNTER, die in den vorherigen Jobs hochgeladen wurden
-    - name: Download all build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: ./artifacts # Alle Artefakte werden in diesen Ordner heruntergeladen
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    # Dieser Job benötigt alle anderen Build-Jobs, um zu starten
+    needs: [build-for-windows-flutter, build-rustdesk-android, build-for-linux-flutter, ...] 
+    # Nur ausführen, wenn ein Git-Tag gepusht wurde
+    if: startsWith(github.ref, 'refs/tags/') 
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    # ERSTELLEN SIE DAS EINZIGE GITHUB RELEASE
-    - name: Create Release and Upload Artifacts
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          ./artifacts/RustDesk-Windows-x64/rustdesk.exe
-          ./artifacts/RustDesk-Android-apk/*.apk
-          # Fügen Sie hier alle weiteren Dateipfade hinzu, z.B.
-          # ./artifacts/RustDesk-Linux-deb/*.deb 
-        # Bestimmt, ob es ein Pre-Release ist
-        prerelease: false 
-      env:
-        # Standardmäßiges GitHub Token mit Schreibrechten
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+      # LADEN SIE ALLE ARTEFAKTE HERUNTER, die in den vorherigen Jobs hochgeladen wurden
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts # Alle Artefakte werden in diesen Ordner heruntergeladen
+
+      # ERSTELLEN SIE DAS EINZIGE GITHUB RELEASE
+      - name: Create Release and Upload Artifacts
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ./artifacts/RustDesk-Windows-x64/rustdesk.exe
+            ./artifacts/RustDesk-Android-apk/*.apk
+            # Fügen Sie hier alle weiteren Dateipfade hinzu, z.B.
+            # ./artifacts/RustDesk-Linux-deb/*.deb 
+          # Bestimmt, ob es ein Pre-Release ist
+          prerelease: false 
+        env:
+          # Standardmäßiges GitHub Token mit Schreibrechten
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
