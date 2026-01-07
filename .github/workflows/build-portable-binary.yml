@@ -1,0 +1,16 @@
+      - name: Create portable binary with embedded config
+        shell: bash
+        run: |
+          # Windows
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            mv target/release/rustdesk.exe "rustdesk-host=${RENDEZVOUS_SERVER},key=${RS_PUB_KEY}.exe"
+          # Linux
+          else
+            mv target/release/rustdesk "rustdesk-host=${RENDEZVOUS_SERVER},key=${RS_PUB_KEY}"
+          fi
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-portable
+          path: rustdesk-host=*,key=*
