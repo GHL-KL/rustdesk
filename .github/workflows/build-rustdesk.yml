@@ -50,11 +50,6 @@ jobs:
         mv target/release/rustdesk "rustdesk-host=${RUSTDESK_ID_SERVER},key=${RUSTDESK_KEY}"
         tar -czf rustdesk-linux-portable.tar.gz "rustdesk-host=${RUSTDESK_ID_SERVER},key=${RUSTDESK_KEY}"
 
-    - name: Upload Linux portable
-      uses: actions/upload-artifact@v4
-      with:
-        name: rustdesk-linux-portable
-        path: rustdesk-linux-portable.tar.gz
 
   build-windows:
     runs-on: windows-latest
@@ -97,9 +92,3 @@ jobs:
         cd rustdesk
         mv target/release/rustdesk.exe "rustdesk-host=${env:RUSTDESK_ID_SERVER},key=${env:RUSTDESK_KEY}.exe"
         Compress-Archive -Path "rustdesk-host=${env:RUSTDESK_ID_SERVER},key=${env:RUSTDESK_KEY}.exe" -DestinationPath rustdesk-windows-portable.zip
-
-    - name: Upload Windows portable
-      uses: actions/upload-artifact@v4
-      with:
-        name: rustdesk-windows-portable
-        path: rustdesk-windows-portable.zip
