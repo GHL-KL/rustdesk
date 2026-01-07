@@ -40,7 +40,7 @@ jobs:
       run: |
         git clone --recursive https://github.com/rustdesk/rustdesk.git
         cd rustdesk
-        cargo build --release --features bundle_openssl
+        cargo build --release
 
     - name: Package portable Linux
       env:
@@ -86,7 +86,7 @@ jobs:
       run: |
         git clone --recursive https://github.com/rustdesk/rustdesk.git
         cd rustdesk
-        cargo build --release --features bundle_openssl
+        cargo build --release
 
     - name: Package portable Windows
       shell: pwsh
