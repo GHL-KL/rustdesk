@@ -90,5 +90,11 @@ jobs:
         RUSTDESK_KEY: ${{ secrets.RUSTDESK_KEY || 'hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ=' }}
       run: |
         cd rustdesk
-        mv target/release/rustdesk.exe "rustdesk-host=${env:RUSTDESK_ID_SERVER},key=${env:RUSTDESK_KEY}.exe"
-        Compress-Archive -Path "rustdesk-host=${env:RUSTDESK_ID_SERVER},key=${env:RUSTDESK_KEY}.exe" -DestinationPath rustdesk-windows-portable.zip
+        $idServer = "${env:RUSTDESK_ID_SERVER}"
+        $key = "${env:RUSTDESK_KEY}"
+        $newName = "rustdesk-host=${idServer},key=${key}.exe"
+        Write-Output "Renaming to: $newName"
+        Move-Item -Path "target/release/rustdesk.exe" -Destination $newName
+        Compress-Archive -Path $newName -DestinationPath "rustdesk-windows-portable.zip"
+        Write-Output "Created: rustdesk-windows-portable.zip"
+
