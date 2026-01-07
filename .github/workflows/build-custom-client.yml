@@ -3,7 +3,7 @@ name: Build custom RustDesk (Win/Linux)
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 4 * * *" # täglich um 04:00 Uhr
+    - cron: "0 4 * * *" # täglich um 04:00 UTC
 
 jobs:
   build-desktop:
@@ -13,7 +13,7 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: rustdesk-custom-windows-x64.exe
+            artifact_name: rustdesk-custom-windows-x64
             artifact_path: target/release/rustdesk.exe
 
           - os: ubuntu-latest
@@ -32,36 +32,55 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Rust (stable)
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:/vcpkg/installed
+            C:/vcpkg/scripts
+            C:/vcpkg/buildtrees
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
+          restore-keys: vcpkg-${{ runner.os }}-
+
+      - name: Install vcpkg (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          git clone https://github.com/Microsoft/vcpkg.git C:/vcpkg
+          ./vcpkg/bootstrap-vcpkg.bat
+          ./vcpkg/vcpkg install libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
+        env:
+          VCPKG_ROOT: C:/vcpkg
+
       - name: Install deps (Linux)
-        if: startsWith(matrix.os, 'ubuntu-')
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libssl-dev
-
-      - name: Install deps (Windows)
-        if: matrix.os == 'windows-latest'
-        run: |
-          choco install -y visualstudio2022buildtools visualstudio2022-workload-vctools
+          sudo apt-get install -y build-essential pkg-config libssl-dev libclang-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 
       - name: Inject server config
         shell: bash
         run: |
-          cat > src/custom_defaults.rs << 'EOF'
-          pub const DEFAULT_RENDEZVOUS_SERVER: &str = "${RENDEZVOUS_SERVER}";
-          pub const DEFAULT_RS_PUB_KEY: &str = "${RS_PUB_KEY}";
+          mkdir -p src/common
+          cat > src/common/custom_config.rs << EOF
+          pub const RENDEZVOUS_SERVER: &str = r#"${RENDEZVOUS_SERVER}"#;
+          pub const RS_PUB_KEY: &str = r#"${RS_PUB_KEY}"#;
           EOF
 
       - name: Build release
+        env:
+          VCPKG_ROOT: C:/vcpkg
         run: |
           cargo build --release --target ${{ matrix.target }}
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
