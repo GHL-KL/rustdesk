@@ -45,10 +45,10 @@ jobs:
 
     - name: Clone and build RustDesk
       env:
-        RUSTDESK_ID_SERVER: rustdesk.wangolun.com:36666
-        RUSTDESK_RELAY_SERVER: rustdesk.wangolun.com:8443
-        RUSTDESK_API_SERVER: https://rustdesk.wangolun.com
-        RUSTDESK_KEY: hCdTRiUfGaapizpmljcL4Y8CMcvmlCJfdl0YokHPUho=
+        RUSTDESK_ID_SERVER: support.myGHL.com:36666
+        RUSTDESK_RELAY_SERVER: support.myGHL.com:8443
+        RUSTDESK_API_SERVER: https://support.myGHL.com
+        RUSTDESK_KEY: hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ=
       run: |
         git clone https://github.com/rustdesk/rustdesk.git
         cd rustdesk
