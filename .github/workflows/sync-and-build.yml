@@ -1,0 +1,103 @@
+name: Sync Latest Release and Build
+
+
+
+on:
+
+  schedule:
+
+    - cron: '0 3 * * *'
+
+  workflow_dispatch:
+
+
+
+permissions:
+
+  contents: write
+
+  actions: write
+
+
+
+jobs:
+
+  sync-and-build:
+
+    name: Sync upstream master
+
+    runs-on: ubuntu-latest
+
+
+
+    steps:
+
+      - name: Checkout Fork
+
+        uses: actions/checkout@v4
+
+        with:
+
+          fetch-depth: 0
+
+          token: ${{ secrets.SYNC_TOKEN_RUSTDESK }}
+
+
+
+      - name: Sync Master to Latest Upstream Tag
+
+        env:
+
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN_RUSTDESK }}
+
+        run: |
+
+          set -e
+
+
+
+          echo "Fetching latest release tag from upstream…"
+
+          LATEST_TAG=$(gh api repos/rustdesk/rustdesk/releases/latest --jq .tag_name)
+
+          echo "Latest upstream tag: $LATEST_TAG"
+
+
+
+          echo "Syncing fork master with upstream master…"
+
+          gh repo sync ${{ github.repository }} \
+
+            --source rustdesk/rustdesk \
+
+            --branch master
+
+
+
+          git fetch origin master
+
+          git checkout master
+
+          git reset --hard origin/master
+
+
+
+          echo "Upstream sync completed."
+
+
+
+  build:
+
+    name: Build RustDesk (no Apple)
+
+    needs: sync-and-build
+
+    uses: ./.github/workflows/flutter-build.yml
+
+
+
+    with:
+
+      upload-artifact: true
+
+      upload-tag: "latest-release"
