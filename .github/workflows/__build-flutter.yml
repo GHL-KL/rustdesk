@@ -1,0 +1,120 @@
+name: RustDesk Windows Custom Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+env:
+  # Deine Server-Daten
+  RENDEZVOUS_SERVER: ${{ secrets.RS_SERVER_ID }}
+  RS_PUB_KEY: ${{ secrets.RS_SERVER_KEY }}
+  
+  # Versionen exakt aus deiner Vorlage [cite: 175]
+  SCITER_RUST_VERSION: "1.75"
+  RUST_VERSION: "1.75"
+  LLVM_VERSION: "15.0.6"
+  FLUTTER_VERSION: "3.24.5"
+  VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
+  VERSION: "1.4.5"
+
+jobs:
+  generate-bridge:
+    uses: ./.github/workflows/bridge.yml
+
+  build-RustDeskTempTopMostWindow:
+    uses: ./.github/workflows/third-party-RustDeskTempTopMostWindow.yml
+    with:
+      upload-artifact: true
+      target: windows-2022
+      configuration: Release
+      platform: x64
+      [cite_start]target_version: Windows10 # Fix für den Validierungsfehler 
+
+  build-windows:
+    name: Build Windows x64
+    needs: [generate-bridge, build-RustDeskTempTopMostWindow]
+    runs-on: windows-2022
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@master
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@v1
+        with:
+          version: ${{ env.LLVM_VERSION }}
+          export-env: true 
+
+      - name: Install flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Patch flutter
+        shell: bash
+        run: |
+          # Wir nutzen den exakten Pfad und Dateinamen aus deiner Vorlage 
+          PATCH_PATH=".github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+          
+          if [ -f "$PATCH_PATH" ]; then
+            cp "$PATCH_PATH" $(dirname $(dirname $(which flutter)))
+            cd $(dirname $(dirname $(which flutter)))
+            git apply flutter_3.24.4_dropdown_menu_enableFilter.diff
+          else
+            echo "Patch nicht gefunden unter $PATCH_PATH. Überspringe Patch-Vorgang..."
+          fi
+
+      - name: Replace engine with custom flutter engine
+        shell: pwsh
+        run: |
+          # Engine-Swap Logik aus deiner Vorlage 
+          flutter precache --windows
+          Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
+          Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
+          $enginePath = "C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release/"
+          mv -Force windows-x64-release/* $enginePath
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.SCITER_RUST_VERSION }}
+          targets: x86_64-pc-windows-msvc
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+
+      - name: Build rustdesk
+        shell: pwsh
+        env:
+          VCPKG_ROOT: "C:/vcpkg"
+          # WICHTIG: Hier werden deine Server-Daten in die EXE eingebaut
+          RENDEZVOUS_SERVER: ${{ secrets.RS_SERVER_ID }}
+          RS_PUB_KEY: ${{ secrets.RS_SERVER_KEY }}
+        run: |
+          python3 .\build.py --portable --hwcodec --flutter --vram --skip-portable-pack
+          mkdir output
+          cp -r ./flutter/build/windows/x64/runner/Release/* ./output/
+
+      - name: Download TopMostWindow artifacts
+        uses: actions/download-artifact@master
+        with:
+          name: topmostwindow-artifacts
+          path: "./output"
+
+      - name: Upload Finished Client
+        uses: actions/upload-artifact@master
+        with:
+          name: RustDesk-Custom-Windows
+          path: output
