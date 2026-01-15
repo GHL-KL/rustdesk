@@ -21,6 +21,7 @@ jobs:
     with:
       upload-artifact: true
       target: windows-2022
+      target_version: "Windows10"
       configuration: Release
       platform: x64
   build-windows:
