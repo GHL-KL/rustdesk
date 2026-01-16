@@ -6,11 +6,11 @@ on:
     branches: [ main ]
 
 env:
-  # Deine Server-Daten
+  # Deine Server-Daten (werden fest in die EXE eingebrannt)
   RENDEZVOUS_SERVER: ${{ secrets.RS_SERVER_ID }}
   RS_PUB_KEY: ${{ secrets.RS_SERVER_KEY }}
   
-  # Versionen exakt aus deiner Vorlage [cite: 175]
+  # Versionen (Exakt aus deiner Vorlage)
   SCITER_RUST_VERSION: "1.75"
   RUST_VERSION: "1.75"
   LLVM_VERSION: "15.0.6"
@@ -22,7 +22,7 @@ jobs:
   generate-bridge:
     uses: ./.github/workflows/bridge.yml
 
-build-RustDeskTempTopMostWindow:
+  build-RustDeskTempTopMostWindow:
     uses: ./.github/workflows/third-party-RustDeskTempTopMostWindow.yml
     with:
       upload-artifact: true
@@ -62,26 +62,30 @@ build-RustDeskTempTopMostWindow:
       - name: Patch flutter
         shell: bash
         run: |
-          # Wir nutzen den exakten Pfad und Dateinamen aus deiner Vorlage 
+          # Pfad basierend auf deiner 'flutter-build.yml' Vorlage
           PATCH_PATH=".github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
           
           if [ -f "$PATCH_PATH" ]; then
+            echo "Patch gefunden. Wende an..."
             cp "$PATCH_PATH" $(dirname $(dirname $(which flutter)))
             cd $(dirname $(dirname $(which flutter)))
             git apply flutter_3.24.4_dropdown_menu_enableFilter.diff
           else
-            echo "Patch nicht gefunden unter $PATCH_PATH. Überspringe Patch-Vorgang..."
+            echo "WARNUNG: Patch $PATCH_PATH nicht gefunden. Überspringe Patching."
           fi
 
       - name: Replace engine with custom flutter engine
         shell: pwsh
         run: |
-          # Engine-Swap Logik aus deiner Vorlage 
           flutter precache --windows
           Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
           Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
           $enginePath = "C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release/"
-          mv -Force windows-x64-release/* $enginePath
+          if (Test-Path $enginePath) {
+            mv -Force windows-x64-release/* $enginePath
+          } else {
+            Write-Host "Engine path not found!"
+          }
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
@@ -99,13 +103,20 @@ build-RustDeskTempTopMostWindow:
         shell: pwsh
         env:
           VCPKG_ROOT: "C:/vcpkg"
-          # WICHTIG: Hier werden deine Server-Daten in die EXE eingebaut
+          # Hier werden die Secrets injiziert
           RENDEZVOUS_SERVER: ${{ secrets.RS_SERVER_ID }}
           RS_PUB_KEY: ${{ secrets.RS_SERVER_KEY }}
         run: |
           python3 .\build.py --portable --hwcodec --flutter --vram --skip-portable-pack
-          mkdir output
-          cp -r ./flutter/build/windows/x64/runner/Release/* ./output/
+          
+          # Ergebnis sichern
+          if (Test-Path "./flutter/build/windows/x64/runner/Release") {
+            mkdir output
+            cp -r ./flutter/build/windows/x64/runner/Release/* ./output/
+          } else {
+            Write-Error "Build Ordner wurde nicht erstellt!"
+            exit 1
+          }
 
       - name: Download TopMostWindow artifacts
         uses: actions/download-artifact@master
