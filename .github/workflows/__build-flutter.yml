@@ -98,7 +98,16 @@ jobs:
         with:
           vcpkgDirectory: C:\vcpkg
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          runVcpkgInstall: true
+          vcpkgJsonGlob: '**/vcpkg.json'
 
+      - name: Install Missing Dependencies (FFmpeg for hwcodec)
+        shell: pwsh
+        run: |
+          # RustDesk benötigt diese Pakete für den hwcodec Build
+          C:\vcpkg\vcpkg.exe install ffmpeg[core,avcodec,avutil,swresample,swscale]:x64-windows-static --recurse
+          C:\vcpkg\vcpkg.exe integrate install          
+          
       - name: Build rustdesk
         shell: pwsh
         env:
