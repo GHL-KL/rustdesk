@@ -34,8 +34,40 @@ jobs:
 
       # 1. Tool installieren (wie gehabt)
       - name: Install flutter_rust_bridge_codegen
+        # Wir installieren es und stellen sicher, dass es im Cargo-Bin landet
         run: cargo install flutter_rust_bridge_codegen --version 1.80.1
         shell: bash
+
+      - name: Setup VCPKG (C++ Dependencies)
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          cd vcpkg
+          ./bootstrap-vcpkg.bat
+          ./vcpkg install --classic libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
+        shell: bash
+
+      - name: Patch Config (Hardcoding Server)
+        shell: bash
+        run: |
+          MY_SERVER="support.myGHL.com"
+          MY_KEY="hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ="
+          CONFIG_FILE="libs/hbb_common/src/config.rs"
+          sed -i '58,61c\    pub static ref PROD_RENDEZVOUS_SERVER: RwLock<String> = RwLock::new("'$MY_SERVER'".to_string());' $CONFIG_FILE
+          sed -i "s/rs-ny.rustdesk.com/$MY_SERVER/g" $CONFIG_FILE
+          sed -i "s|OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=|$MY_KEY|g" $CONFIG_FILE
+
+      - name: Generate Bridge Code
+        # Hier nutzen wir den absoluten Pfad zum Tool, um "File not found" zu vermeiden
+        run: |
+          $HOME/.cargo/bin/flutter_rust_bridge_codegen --rust-input src/api.rs --rust-output src/bridge_generated.rs --dart-output flutter/lib/bridge_generated.dart
+        shell: bash
+
+      - name: Build RustDesk
+        shell: cmd
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+        run: |
+          python build.py --portable --flutter
 
       # 2. WICHTIG: Cargo Bin Verzeichnis zum Pfad hinzufügen
       - name: Add Cargo bin to PATH
