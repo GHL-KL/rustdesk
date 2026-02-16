@@ -6,13 +6,13 @@ on:
 jobs:
   build-windows:
     name: Build Windows Client
-    runs-on: windows-2022 # 2022 ist stabil für RustDesk 1.3.x Builds
+    runs-on: windows-2022
     
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          submodules: recursive # WICHTIG: Holt hbb_common mit!
+          submodules: recursive
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -22,7 +22,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.6' # Die passende Version für RustDesk 1.3.x
+          flutter-version: '3.19.6' 
           channel: 'stable'
           cache: true
 
@@ -34,49 +34,46 @@ jobs:
 
       - name: Setup VCPKG (C++ Dependencies)
         run: |
-          # RustDesk braucht VCPKG für statische Libs
           git clone https://github.com/microsoft/vcpkg.git
           cd vcpkg
           ./bootstrap-vcpkg.bat
-          # Hier ist die wichtige Änderung: --classic hinzugefügt
           ./vcpkg install --classic libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
         shell: bash
 
       - name: Patch Config (Hardcoding Server)
         shell: bash
         run: |
-          # NEUE WERTE HIER EINTRAGEN:
           MY_SERVER="support.myGHL.com"
           MY_KEY="hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ="
           CONFIG_FILE="libs/hbb_common/src/config.rs"
 
-          echo "Starte Patching von $CONFIG_FILE..."
+          echo "Starte sauberen Patch von $CONFIG_FILE..."
 
-          # 1. Rendezvous Server erzwingen (Zeile ~11 in deiner Datei)
-          # Ersetzt den gesamten option_env! Block durch deinen String
-          sed -i "s/match option_env!(\"RENDEZVOUS_SERVER\") {/\"$MY_SERVER\".to_string(); match option_env!(\"IGNORE_THIS\") {/g" $CONFIG_FILE
+          # 1. PROD_RENDEZVOUS_SERVER komplett ersetzen (Zeilen 58-61)
+          # Wir nutzen ein einfacheres Format für sed, um Syntaxfehler zu vermeiden
+          sed -i '58,61c\    pub static ref PROD_RENDEZVOUS_SERVER: RwLock<String> = RwLock::new("'$MY_SERVER'".to_string());' $CONFIG_FILE
 
-          # 2. Fallback Server Liste überschreiben (Zeile ~23)
+          # 2. Fallback Server Liste überschreiben (Zeile 23)
           sed -i "s/rs-ny.rustdesk.com/$MY_SERVER/g" $CONFIG_FILE
 
-          # 3. Public Key hardcoden (Zeile ~23)
-          # Ersetzt den Standard-Key durch deinen
+          # 3. Public Key hardcoden (Zeile 23)
           sed -i "s|OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=|$MY_KEY|g" $CONFIG_FILE
 
-          echo "Prüfung:"
-          grep "$MY_SERVER" $CONFIG_FILE
+          echo "Prüfung der kritischen Zeile 58:"
+          sed -n '58p' $CONFIG_FILE
 
       - name: Build RustDesk
         shell: cmd
         env:
           VCPKG_ROOT: ${{ github.workspace }}\vcpkg
         run: |
-          :: Der Build-Befehl für 1.3.6 nutzt build.py
-          python build.py --portable --flutter --feature hwcodec
+          :: WICHTIG: --feature hwcodec wurde entfernt, da es den Build abbricht
+          python build.py --portable --flutter
 
       - name: Rename Executable
         shell: bash
         run: |
+          # Prüfen ob Pfad existiert und umbenennen
           cd build/release
           mv rustdesk.exe "Support-GHL.exe"
 
