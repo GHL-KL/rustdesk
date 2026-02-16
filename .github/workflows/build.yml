@@ -57,10 +57,10 @@ jobs:
           sed -i "s|OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=|$MY_KEY|g" $CONFIG_FILE
 
       - name: Generate Bridge Code
-        # Hier nutzen wir den absoluten Pfad zum Tool, um "File not found" zu vermeiden
+        # Wir nutzen CMD, um Windows-Pfadvariablen direkt zu nutzen
+        shell: cmd
         run: |
-          $HOME/.cargo/bin/flutter_rust_bridge_codegen --rust-input src/api.rs --rust-output src/bridge_generated.rs --dart-output flutter/lib/bridge_generated.dart
-        shell: bash
+          "%USERPROFILE%\.cargo\bin\flutter_rust_bridge_codegen.exe" --rust-input src\api.rs --rust-output src\bridge_generated.rs --dart-output flutter\lib\bridge_generated.dart
 
       - name: Build RustDesk
         shell: cmd
