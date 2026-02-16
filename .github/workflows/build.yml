@@ -32,9 +32,14 @@ jobs:
           toolchain: stable
           target: x86_64-pc-windows-msvc
 
-      # NEU: Installiere das Tool für die Flutter-Rust-Brücke
+      # 1. Tool installieren (wie gehabt)
       - name: Install flutter_rust_bridge_codegen
         run: cargo install flutter_rust_bridge_codegen --version 1.80.1
+        shell: bash
+
+      # 2. WICHTIG: Cargo Bin Verzeichnis zum Pfad hinzufügen
+      - name: Add Cargo bin to PATH
+        run: echo "$USERPROFILE\.cargo\bin" >> $GITHUB_PATH
         shell: bash
 
       - name: Setup VCPKG
@@ -45,16 +50,23 @@ jobs:
           ./vcpkg install --classic libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
         shell: bash
 
+      # 3. Patch Config (hier nichts ändern)
       - name: Patch Config (Hardcoding Server)
         shell: bash
         run: |
           MY_SERVER="support.myGHL.com"
           MY_KEY="hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ="
           CONFIG_FILE="libs/hbb_common/src/config.rs"
-          # Patch wie gehabt...
           sed -i '58,61c\    pub static ref PROD_RENDEZVOUS_SERVER: RwLock<String> = RwLock::new("'$MY_SERVER'".to_string());' $CONFIG_FILE
           sed -i "s/rs-ny.rustdesk.com/$MY_SERVER/g" $CONFIG_FILE
           sed -i "s|OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=|$MY_KEY|g" $CONFIG_FILE
+
+      # 4. Bridge Code generieren
+      # Wir rufen es jetzt über "call" oder direkt auf, da der Pfad nun bekannt ist
+      - name: Generate Bridge Code
+        run: |
+          flutter_rust_bridge_codegen --rust-input src/api.rs --rust-output src/bridge_generated.rs --dart-output flutter/lib/bridge_generated.dart
+        shell: bash
 
       # NEU: Generiere den Brückencode explizit
       - name: Generate Bridge Code
