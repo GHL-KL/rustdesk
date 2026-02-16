@@ -1,0 +1,86 @@
+name: Build RustDesk 1.3.6 Windows Custom
+
+on:
+  workflow_dispatch: # Ermöglicht manuellen Start per Klick
+
+jobs:
+  build-windows:
+    name: Build Windows Client
+    runs-on: windows-2022 # 2022 ist stabil für RustDesk 1.3.x Builds
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive # WICHTIG: Holt hbb_common mit!
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10' 
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.6' # Die passende Version für RustDesk 1.3.x
+          channel: 'stable'
+          cache: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
+
+      - name: Setup VCPKG (C++ Dependencies)
+        run: |
+          # RustDesk braucht VCPKG für statische Libs
+          git clone https://github.com/microsoft/vcpkg.git
+          cd vcpkg
+          ./bootstrap-vcpkg.bat
+          ./vcpkg install libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
+        shell: bash
+
+      - name: Patch Config (Hardcoding Server)
+        shell: bash
+        run: |
+          # NEUE WERTE HIER EINTRAGEN:
+          MY_SERVER="support.myGHL.com"
+          MY_KEY="hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ="
+          CONFIG_FILE="libs/hbb_common/src/config.rs"
+
+          echo "Starte Patching von $CONFIG_FILE..."
+
+          # 1. Rendezvous Server erzwingen (Zeile ~11 in deiner Datei)
+          # Ersetzt den gesamten option_env! Block durch deinen String
+          sed -i "s/match option_env!(\"RENDEZVOUS_SERVER\") {/\"$MY_SERVER\".to_string(); match option_env!(\"IGNORE_THIS\") {/g" $CONFIG_FILE
+
+          # 2. Fallback Server Liste überschreiben (Zeile ~23)
+          sed -i "s/rs-ny.rustdesk.com/$MY_SERVER/g" $CONFIG_FILE
+
+          # 3. Public Key hardcoden (Zeile ~23)
+          # Ersetzt den Standard-Key durch deinen
+          sed -i "s|OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=|$MY_KEY|g" $CONFIG_FILE
+
+          echo "Prüfung:"
+          grep "$MY_SERVER" $CONFIG_FILE
+
+      - name: Build RustDesk
+        shell: cmd
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+        run: |
+          :: Der Build-Befehl für 1.3.6 nutzt build.py
+          python build.py --portable --flutter --feature hwcodec
+
+      - name: Rename Executable
+        shell: bash
+        run: |
+          cd build/release
+          mv rustdesk.exe "Support-GHL.exe"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Support-Client-Windows
+          path: build/release/Support-GHL.exe
