@@ -63,31 +63,39 @@ jobs:
         env:
           LIBCLANG_PATH: 'C:\Program Files\LLVM\bin'
         run: |
-          # 1. Flutter-Umgebung vervollständigen
+          # 1. PATH und Flutter-Tools vorbereiten
           $env:PATH += ";C:\Program Files\LLVM\bin"
-          flutter precache
           
-          # 2. Abhängigkeiten im Flutter-Ordner laden
+          # WICHTIG: Flutter zwingen, alle internen Binaries zu laden
+          flutter doctor
+          flutter precache --windows
+          
+          # 2. Abhängigkeiten laden
           cd flutter
+          # Falls Fehler mit Paketen auftreten: pubspec.lock löschen
+          if (Test-Path "pubspec.lock") { Remove-Item "pubspec.lock" }
           flutter pub get
           cd ..
           
-          # 3. Datei-Eingang bestimmen
+          # 3. Den richtigen Rust-Eingang finden
           $rustInput = ""
           if (Test-Path "src\flutter_ffi.rs") { $rustInput = "src/flutter_ffi.rs" }
           elseif (Test-Path "src\api.rs") { $rustInput = "src/api.rs" }
+          else { Write-Error "Eingabedatei nicht gefunden!"; exit 1 }
           
-          # 4. Codegen OHNE automatischen build_runner ausführen
-          # Wir nutzen --skip-build-runner, damit das Tool nicht selbst abstürzt
+          Write-Host "Verwende $rustInput für Codegen..."
+          
+          # 4. Codegen ausführen (mit korrektem Flag --no-build-runner)
           $codegen = "$env:USERPROFILE\.cargo\bin\flutter_rust_bridge_codegen.exe"
           & $codegen --rust-input $rustInput `
                      --rust-output src/bridge_generated.rs `
                      --dart-output flutter/lib/bridge_generated.dart `
-                     --skip-build-runner
+                     --no-build-runner
           
-          # 5. Build-Runner manuell starten (hier haben wir bessere Logs)
+          # 5. Build-Runner manuell ausführen
           cd flutter
-          flutter pub run build_runner build --delete-conflicting-outputs
+          # Wir nutzen 'dart run' statt 'flutter pub run', das ist oft stabiler in CI
+          dart run build_runner build --delete-conflicting-outputs
 
       - name: Build RustDesk
         shell: cmd
