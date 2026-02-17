@@ -63,19 +63,31 @@ jobs:
         env:
           LIBCLANG_PATH: 'C:\Program Files\LLVM\bin'
         run: |
+          # 1. Flutter-Umgebung vervollständigen
           $env:PATH += ";C:\Program Files\LLVM\bin"
+          flutter precache
           
-          # Vor der Generierung: Abhängigkeiten im Flutter-Ordner auflösen
+          # 2. Abhängigkeiten im Flutter-Ordner laden
           cd flutter
           flutter pub get
           cd ..
           
+          # 3. Datei-Eingang bestimmen
           $rustInput = ""
           if (Test-Path "src\flutter_ffi.rs") { $rustInput = "src/flutter_ffi.rs" }
           elseif (Test-Path "src\api.rs") { $rustInput = "src/api.rs" }
           
+          # 4. Codegen OHNE automatischen build_runner ausführen
+          # Wir nutzen --skip-build-runner, damit das Tool nicht selbst abstürzt
           $codegen = "$env:USERPROFILE\.cargo\bin\flutter_rust_bridge_codegen.exe"
-          & $codegen --rust-input $rustInput --rust-output src/bridge_generated.rs --dart-output flutter/lib/bridge_generated.dart
+          & $codegen --rust-input $rustInput `
+                     --rust-output src/bridge_generated.rs `
+                     --dart-output flutter/lib/bridge_generated.dart `
+                     --skip-build-runner
+          
+          # 5. Build-Runner manuell starten (hier haben wir bessere Logs)
+          cd flutter
+          flutter pub run build_runner build --delete-conflicting-outputs
 
       - name: Build RustDesk
         shell: cmd
