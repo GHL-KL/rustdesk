@@ -22,7 +22,8 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5' 
+          # Zurück auf 3.19.6 für bessere Code-Kompatibilität
+          flutter-version: '3.19.6' 
           channel: 'stable'
           cache: true
 
@@ -42,6 +43,16 @@ jobs:
           echo "$env:USERPROFILE\.cargo\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         shell: pwsh
 
+      - name: Patch Dependencies (Fix for Flutter 3.19)
+        shell: bash
+        run: |
+          cd flutter
+          # Verhindert, dass neuere Versionen geladen werden, die Dart 3.5 erfordern
+          sed -i 's/extended_text: ^/extended_text: 13.0.0 #/g' pubspec.yaml
+          sed -i 's/extended_text_field: ^/extended_text_field: 13.0.0 #/g' pubspec.yaml
+          # Falls pubspec.lock existiert, löschen wir es für einen sauberen Stand
+          rm -f pubspec.lock
+
       - name: Setup VCPKG
         run: |
           git clone https://github.com/microsoft/vcpkg.git
@@ -50,75 +61,50 @@ jobs:
           ./vcpkg install --classic libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
         shell: bash
 
-      - name: Patch Config (Hardcoded Fallbacks)
-        shell: bash
-        run: |
-          # Wir patchen nur die harten Fallbacks, falls keine Env-Vars gesetzt sind
-          MY_SERVER="support.myGHL.com"
-          CONFIG_FILE="libs/hbb_common/src/config.rs"
-          sed -i "s/rs-ny.rustdesk.com/$MY_SERVER/g" $CONFIG_FILE
-
       - name: Generate Bridge Code
         shell: pwsh
         env:
           LIBCLANG_PATH: 'C:\Program Files\LLVM\bin'
         run: |
-          # 1. PATH und Flutter-Tools vorbereiten
           $env:PATH += ";C:\Program Files\LLVM\bin"
-          
-          # WICHTIG: Flutter zwingen, alle internen Binaries zu laden
           flutter doctor
           flutter precache --windows
           
-          # 2. Abhängigkeiten laden
           cd flutter
-          # Falls Fehler mit Paketen auftreten: pubspec.lock löschen
-          if (Test-Path "pubspec.lock") { Remove-Item "pubspec.lock" }
           flutter pub get
           cd ..
           
-          # 3. Den richtigen Rust-Eingang finden
           $rustInput = ""
           if (Test-Path "src\flutter_ffi.rs") { $rustInput = "src/flutter_ffi.rs" }
           elseif (Test-Path "src\api.rs") { $rustInput = "src/api.rs" }
-          else { Write-Error "Eingabedatei nicht gefunden!"; exit 1 }
           
-          Write-Host "Verwende $rustInput für Codegen..."
-          
-          # 4. Codegen ausführen (mit korrektem Flag --no-build-runner)
+          # KORREKTUR: Der Dateiname MUSS generated_bridge.dart lauten
           $codegen = "$env:USERPROFILE\.cargo\bin\flutter_rust_bridge_codegen.exe"
           & $codegen --rust-input $rustInput `
                      --rust-output src/bridge_generated.rs `
-                     --dart-output flutter/lib/bridge_generated.dart `
+                     --dart-output flutter/lib/generated_bridge.dart `
                      --no-build-runner
           
-          # 5. Build-Runner manuell ausführen
           cd flutter
-          # Wir nutzen 'dart run' statt 'flutter pub run', das ist oft stabiler in CI
           dart run build_runner build --delete-conflicting-outputs
 
       - name: Build RustDesk
         shell: cmd
         env:
           VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-          # Hier setzen wir deine Server-Daten als Build-Umgebungsvariablen
           RENDEZVOUS_SERVER: support.myGHL.com
           RS_PUB_KEY: hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ=
         run: |
-          :: Den Build starten
           python build.py --portable --flutter
 
       - name: Rename Executable
         shell: pwsh
         run: |
-          # RustDesk legt die Datei je nach Build-Art an unterschiedliche Orte
           $exePath = Get-ChildItem -Path . -Filter "rustdesk.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
           if ($exePath) {
             Move-Item -Path $exePath -Destination "Support-GHL.exe" -Force
-            Write-Host "Erfolg: Datei gefunden unter $exePath"
           } else {
-            Write-Error "Fehler: rustdesk.exe wurde nirgendwo gefunden!"
-            Get-ChildItem -Path . -Recurse -Filter "*.exe"
+            Write-Error "rustdesk.exe nicht gefunden!"
             exit 1
           }
 
