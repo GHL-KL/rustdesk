@@ -39,8 +39,7 @@ jobs:
       - name: Install flutter_rust_bridge_codegen
         run: |
           cargo install flutter_rust_bridge_codegen --version 1.80.1
-          # Wir erzwingen die Pfad-Aktualisierung für diese Session
-          $env:PATH += ";$env:USERPROFILE\.cargo\bin"
+          echo "$env:USERPROFILE\.cargo\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         shell: pwsh
 
       - name: Setup VCPKG
@@ -51,54 +50,59 @@ jobs:
           ./vcpkg install --classic libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
         shell: bash
 
-      - name: Patch Config (Hardcoding Server)
+      - name: Patch Config (Hardcoded Fallbacks)
         shell: bash
         run: |
+          # Wir patchen nur die harten Fallbacks, falls keine Env-Vars gesetzt sind
           MY_SERVER="support.myGHL.com"
-          MY_KEY="hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ="
           CONFIG_FILE="libs/hbb_common/src/config.rs"
-          sed -i '58,61c\    pub static ref PROD_RENDEZVOUS_SERVER: RwLock<String> = RwLock::new("'$MY_SERVER'".to_string());' $CONFIG_FILE
           sed -i "s/rs-ny.rustdesk.com/$MY_SERVER/g" $CONFIG_FILE
-          sed -i "s|OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=|$MY_KEY|g" $CONFIG_FILE
 
       - name: Generate Bridge Code
         shell: pwsh
         env:
-          # Das ist das Geheimnis: Die Brücke muss wissen, wo Clang liegt
           LIBCLANG_PATH: 'C:\Program Files\LLVM\bin'
         run: |
-          # 1. Sicherstellen, dass LLVM im Pfad ist
           $env:PATH += ";C:\Program Files\LLVM\bin"
           
-          # 2. Prüfen ob die Quelldatei existiert (Debug)
-          if (!(Test-Path "src\api.rs")) { Write-Error "src\api.rs nicht gefunden!" }
+          # Dynamische Suche nach der richtigen Datei (api.rs oder flutter_ffi.rs)
+          $rustInput = ""
+          if (Test-Path "src\flutter_ffi.rs") { $rustInput = "src/flutter_ffi.rs" }
+          elseif (Test-Path "src\api.rs") { $rustInput = "src/api.rs" }
+          else { Write-Error "Weder src/flutter_ffi.rs noch src/api.rs gefunden!"; exit 1 }
           
-          # 3. Den Befehl mit dem Call-Operator (&) und absolutem Pfad ausführen
+          Write-Host "Verwende $rustInput für Codegen..."
+          
           $codegen = "$env:USERPROFILE\.cargo\bin\flutter_rust_bridge_codegen.exe"
-          & $codegen --rust-input src/api.rs --rust-output src/bridge_generated.rs --dart-output flutter/lib/bridge_generated.dart
+          & $codegen --rust-input $rustInput --rust-output src/bridge_generated.rs --dart-output flutter/lib/bridge_generated.dart
 
       - name: Build RustDesk
         shell: cmd
         env:
           VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+          # Hier setzen wir deine Server-Daten als Build-Umgebungsvariablen
+          RENDEZVOUS_SERVER: support.myGHL.com
+          RS_PUB_KEY: hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ=
         run: |
-          :: Den Build ohne das fehlerhafte hwcodec-Flag starten
+          :: Den Build starten
           python build.py --portable --flutter
 
       - name: Rename Executable
-        shell: bash
+        shell: pwsh
         run: |
-          if [ -f "build/release/rustdesk.exe" ]; then
-            cd build/release
-            mv rustdesk.exe "Support-GHL.exe"
-          else
-            echo "Fehler: rustdesk.exe wurde nicht erstellt!"
-            ls -R build/
+          # RustDesk legt die Datei je nach Build-Art an unterschiedliche Orte
+          $exePath = Get-ChildItem -Path . -Filter "rustdesk.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          if ($exePath) {
+            Move-Item -Path $exePath -Destination "Support-GHL.exe" -Force
+            Write-Host "Erfolg: Datei gefunden unter $exePath"
+          } else {
+            Write-Error "Fehler: rustdesk.exe wurde nirgendwo gefunden!"
+            Get-ChildItem -Path . -Recurse -Filter "*.exe"
             exit 1
-          fi
+          }
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Support-Client-Windows
-          path: build/release/Support-GHL.exe
+          path: Support-GHL.exe
