@@ -22,7 +22,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.6' 
+          flutter-version: '3.24.5' 
           channel: 'stable'
           cache: true
 
@@ -65,13 +65,14 @@ jobs:
         run: |
           $env:PATH += ";C:\Program Files\LLVM\bin"
           
-          # Dynamische Suche nach der richtigen Datei (api.rs oder flutter_ffi.rs)
+          # Vor der Generierung: Abhängigkeiten im Flutter-Ordner auflösen
+          cd flutter
+          flutter pub get
+          cd ..
+          
           $rustInput = ""
           if (Test-Path "src\flutter_ffi.rs") { $rustInput = "src/flutter_ffi.rs" }
           elseif (Test-Path "src\api.rs") { $rustInput = "src/api.rs" }
-          else { Write-Error "Weder src/flutter_ffi.rs noch src/api.rs gefunden!"; exit 1 }
-          
-          Write-Host "Verwende $rustInput für Codegen..."
           
           $codegen = "$env:USERPROFILE\.cargo\bin\flutter_rust_bridge_codegen.exe"
           & $codegen --rust-input $rustInput --rust-output src/bridge_generated.rs --dart-output flutter/lib/bridge_generated.dart
