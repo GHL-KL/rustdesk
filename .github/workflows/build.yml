@@ -32,18 +32,15 @@ jobs:
           toolchain: stable
           target: x86_64-pc-windows-msvc
 
-      # 1. LLVM installieren (Wichtig für flutter_rust_bridge)
       - name: Install LLVM
         run: choco install llvm -y
         shell: pwsh
 
-      # 2. Codegen installieren & Pfad setzen
       - name: Install flutter_rust_bridge_codegen
         run: |
           cargo install flutter_rust_bridge_codegen --version 1.80.1
-          # Dies fügt den Cargo-Bin Ordner für alle folgenden Schritte zum PATH hinzu
-          $cargoBin = "$env:USERPROFILE\.cargo\bin"
-          echo "$cargoBin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          # Wir erzwingen die Pfad-Aktualisierung für diese Session
+          $env:PATH += ";$env:USERPROFILE\.cargo\bin"
         shell: pwsh
 
       - name: Setup VCPKG
@@ -60,29 +57,45 @@ jobs:
           MY_SERVER="support.myGHL.com"
           MY_KEY="hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ="
           CONFIG_FILE="libs/hbb_common/src/config.rs"
-          # Wir löschen die Zeilen 58-61 und setzen unsere Konstante ein
           sed -i '58,61c\    pub static ref PROD_RENDEZVOUS_SERVER: RwLock<String> = RwLock::new("'$MY_SERVER'".to_string());' $CONFIG_FILE
           sed -i "s/rs-ny.rustdesk.com/$MY_SERVER/g" $CONFIG_FILE
           sed -i "s|OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=|$MY_KEY|g" $CONFIG_FILE
 
-      # 3. Bridge Code generieren (Jetzt sollte das Tool im PATH gefunden werden)
       - name: Generate Bridge Code
-        run: |
-          flutter_rust_bridge_codegen --rust-input src/api.rs --rust-output src/bridge_generated.rs --dart-output flutter/lib/bridge_generated.dart
         shell: pwsh
+        env:
+          # Das ist das Geheimnis: Die Brücke muss wissen, wo Clang liegt
+          LIBCLANG_PATH: 'C:\Program Files\LLVM\bin'
+        run: |
+          # 1. Sicherstellen, dass LLVM im Pfad ist
+          $env:PATH += ";C:\Program Files\LLVM\bin"
+          
+          # 2. Prüfen ob die Quelldatei existiert (Debug)
+          if (!(Test-Path "src\api.rs")) { Write-Error "src\api.rs nicht gefunden!" }
+          
+          # 3. Den Befehl mit dem Call-Operator (&) und absolutem Pfad ausführen
+          $codegen = "$env:USERPROFILE\.cargo\bin\flutter_rust_bridge_codegen.exe"
+          & $codegen --rust-input src/api.rs --rust-output src/bridge_generated.rs --dart-output flutter/lib/bridge_generated.dart
 
       - name: Build RustDesk
         shell: cmd
         env:
           VCPKG_ROOT: ${{ github.workspace }}\vcpkg
         run: |
+          :: Den Build ohne das fehlerhafte hwcodec-Flag starten
           python build.py --portable --flutter
 
       - name: Rename Executable
         shell: bash
         run: |
-          cd build/release
-          mv rustdesk.exe "Support-GHL.exe"
+          if [ -f "build/release/rustdesk.exe" ]; then
+            cd build/release
+            mv rustdesk.exe "Support-GHL.exe"
+          else
+            echo "Fehler: rustdesk.exe wurde nicht erstellt!"
+            ls -R build/
+            exit 1
+          fi
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
