@@ -48,15 +48,17 @@ jobs:
         shell: pwsh
         run: |
           cd flutter
-          # Erzwingt Version 13.0.0 von extended_text, um Dart 3.5 Anforderung zu umgehen
-          $overrides = @"
-dependency_overrides:
-  extended_text: 13.0.0
-  extended_text_field: 13.0.0
-"@
-          Add-Content -Path pubspec.yaml -Value $overrides
+          # Wir hängen die Overrides Zeile für Zeile an, um Here-String Fehler zu vermeiden
+          Add-Content -Path pubspec.yaml -Value "`n" # Sicherstellen, dass wir in einer neuen Zeile starten
+          Add-Content -Path pubspec.yaml -Value "dependency_overrides:"
+          Add-Content -Path pubspec.yaml -Value "  extended_text: 13.0.0"
+          Add-Content -Path pubspec.yaml -Value "  extended_text_field: 13.0.0"
           
-          # Generiert die notwendige pubspec.lock Datei
+          # Zeig uns zur Sicherheit den Inhalt der Datei im Log an
+          Write-Host "Geänderte pubspec.yaml:"
+          Get-Content pubspec.yaml -Tail 10
+          
+          # Jetzt sollte pub get sauber laufen
           flutter pub get
           cd ..
 
