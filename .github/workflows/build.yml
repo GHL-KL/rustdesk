@@ -71,10 +71,15 @@ jobs:
       - name: Setup VCPKG
         shell: pwsh
         run: |
-          git clone https://github.com/microsoft/vcpkg.git
+          # Falls der Ordner schon existiert (durch Cache), nicht neu klonen
+          if (!(Test-Path "vcpkg")) {
+            git clone https://github.com/microsoft/vcpkg.git
+          }
           cd vcpkg
           .\bootstrap-vcpkg.bat
-          .\vcpkg.exe install libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
+          
+          # Das Zauberwort ist '--classic'
+          .\vcpkg.exe install --classic libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
           cd ..
 
       - name: Generate Bridge Code
