@@ -42,11 +42,11 @@ jobs:
           echo "$env:USERPROFILE\.cargo\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         shell: pwsh
 
-      - name: Patch Dependencies & Plugins
+      - name: Prepare Flutter & Dependencies
         shell: pwsh
         run: |
           cd flutter
-          # 1. pubspec.yaml patch (vermeidet Duplicate Key Error)
+          # 1. Pubspec Patch (verhindert Versions-Konflikte)
           $pubspec = Get-Content pubspec.yaml -Raw
           if ($pubspec -match "dependency_overrides:") {
               $pubspec = $pubspec -replace "dependency_overrides:", "dependency_overrides:`n  extended_text: 13.0.0`n  extended_text_field: 13.0.0"
@@ -55,22 +55,7 @@ jobs:
           }
           $pubspec | Set-Content pubspec.yaml
           
-          # 2. Dependencies laden (erzeugt die Ordnerstruktur)
           flutter pub get
-          
-          # 3. C++ FIX: d3d11_output.cpp patchen (chrono Header hinzufügen)
-          Write-Host "Suche nach d3d11_output.cpp zum Patchen..."
-          $targetFile = Get-ChildItem -Path . -Filter "d3d11_output.cpp" -Recurse | Select-Object -ExpandProperty FullName
-          if ($targetFile) {
-              Write-Host "Datei gefunden: $targetFile"
-              $content = Get-Content $targetFile
-              # Füge die Header ganz oben ein
-              $patchedContent = "#include <chrono>`n#include <ratio>`n" + ($content -join "`n")
-              $patchedContent | Set-Content $targetFile
-              Write-Host "Patch erfolgreich angewendet."
-          } else {
-              Write-Warning "d3d11_output.cpp wurde nicht gefunden. Der Build könnte fehlschlagen."
-          }
           cd ..
 
       - name: Setup VCPKG
@@ -95,13 +80,28 @@ jobs:
           dart run build_runner build --delete-conflicting-outputs
           cd ..
 
-      - name: Build Executable
-        shell: cmd
+      - name: Final C++ Patch and Build
+        shell: pwsh
         env:
           VCPKG_ROOT: ${{ github.workspace }}\vcpkg
           RENDEZVOUS_SERVER: support.myGHL.com
           RS_PUB_KEY: hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ=
         run: |
+          # DIESER SCHRITT FIXT DEN C++ FEHLER DIREKT VOR DEM BUILD
+          Write-Host "Suche d3d11_output.cpp in den Plugins..."
+          $pluginFiles = Get-ChildItem -Path "flutter/windows/flutter/ephemeral" -Filter "d3d11_output.cpp" -Recurse
+          
+          foreach ($file in $pluginFiles) {
+              Write-Host "Patching: $($file.FullName)"
+              $content = Get-Content $file.FullName
+              if ($content[0] -notmatch "#include <chrono>") {
+                  $newContent = @("#include <chrono>", "#include <ratio>") + $content
+                  $newContent | Set-Content $file.FullName -Encoding UTF8
+                  Write-Host "Erfolgreich gepatcht."
+              }
+          }
+
+          # Jetzt den Build starten
           python build.py --portable --flutter
 
       - name: Prepare Artifact
@@ -110,9 +110,9 @@ jobs:
           $exe = Get-ChildItem -Path . -Filter "rustdesk.exe" -Recurse | Select-Object -First 1
           if ($exe) {
             Copy-Item -Path $exe.FullName -Destination "Support-GHL.exe"
-            Write-Host "Build erfolgreich! Datei: Support-GHL.exe"
+            Write-Host "Fertig: Support-GHL.exe"
           } else {
-            Write-Error "Build abgeschlossen, aber rustdesk.exe nicht gefunden."
+            Write-Error "Build fehlgeschlagen, .exe nicht gefunden."
             exit 1
           }
 
