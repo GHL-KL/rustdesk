@@ -20,7 +20,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.6' 
+          flutter-version: '3.19.6'
           channel: 'stable'
           cache: true
 
@@ -31,88 +31,146 @@ jobs:
           target: x86_64-pc-windows-msvc
 
       - name: Install LLVM
+        shell: pwsh
         run: |
           choco install llvm -y
           echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
-        shell: pwsh
 
-      - name: Install flutter_rust_bridge_codegen
-        run: |
-          cargo install flutter_rust_bridge_codegen --version 1.80.1
-          echo "$env:USERPROFILE\.cargo\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        shell: pwsh
-
-      - name: Prepare Flutter & Dependencies
-        shell: pwsh
-        run: |
-          cd flutter
-          # 1. Pubspec Patch (verhindert Versions-Konflikte)
-          $pubspec = Get-Content pubspec.yaml -Raw
-          if ($pubspec -match "dependency_overrides:") {
-              $pubspec = $pubspec -replace "dependency_overrides:", "dependency_overrides:`n  extended_text: 13.0.0`n  extended_text_field: 13.0.0"
-          } else {
-              $pubspec += "`ndependency_overrides:`n  extended_text: 13.0.0`n  extended_text_field: 13.0.0"
-          }
-          $pubspec | Set-Content pubspec.yaml
-          
-          flutter pub get
-          cd ..
+      - name: Cache vcpkg
+        id: cache-vcpkg
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\vcpkg
+          key: vcpkg-win-2024-11-16-libvpx-libyuv-opus-aom
 
       - name: Setup VCPKG
         shell: pwsh
         run: |
-          if (!(Test-Path "vcpkg")) {
-            git clone https://github.com/microsoft/vcpkg.git
+          if (!(Test-Path "vcpkg\vcpkg.exe")) {
+            if (!(Test-Path "vcpkg")) {
+              git clone https://github.com/microsoft/vcpkg.git
+            }
+            cd vcpkg
+            git checkout 2024.11.16
+            .\bootstrap-vcpkg.bat
+            cd ..
           }
-          cd vcpkg
-          .\bootstrap-vcpkg.bat
-          .\vcpkg.exe install --classic libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
-          cd ..
+          .\vcpkg\vcpkg.exe install --classic `
+            libvpx:x64-windows-static `
+            libyuv:x64-windows-static `
+            opus:x64-windows-static `
+            aom:x64-windows-static
+          echo "VCPKG_ROOT=${{ github.workspace }}\vcpkg" >> $env:GITHUB_ENV
 
-      - name: Generate Bridge Code
+      - name: Flutter pub get
         shell: pwsh
         run: |
-          $env:PATH += ";C:\Program Files\LLVM\bin"
-          $rustInput = if (Test-Path "src/flutter_ffi.rs") { "src/flutter_ffi.rs" } else { "src/api.rs" }
-          $codegen = "$env:USERPROFILE\.cargo\bin\flutter_rust_bridge_codegen.exe"
-          & $codegen --rust-input $rustInput --rust-output src/bridge_generated.rs --dart-output flutter/lib/generated_bridge.dart --no-build-runner
           cd flutter
-          dart run build_runner build --delete-conflicting-outputs
+          flutter pub get
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cd ..
 
-      - name: Final C++ Patch and Build
+      - name: Build virtual display DLL
+        shell: pwsh
+        run: |
+          cd libs\virtual_display\dylib
+          cargo build --release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cd ..\..\..
+
+      - name: Build Rust Library
+        shell: pwsh
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+          LIBCLANG_PATH: C:\Program Files\LLVM\bin
+          RENDEZVOUS_SERVER: support.myGHL.com
+          RS_PUB_KEY: hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ=
+        run: |
+          cargo build --features flutter --lib --release
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Cargo build fehlgeschlagen!"
+            exit 1
+          }
+          if (-not (Test-Path "target\release\librustdesk.dll")) {
+            Write-Error "librustdesk.dll nicht gefunden!"
+            exit 1
+          }
+          Write-Host "✓ librustdesk.dll erfolgreich gebaut"
+
+      - name: Build Flutter Windows
         shell: pwsh
         env:
           VCPKG_ROOT: ${{ github.workspace }}\vcpkg
           RENDEZVOUS_SERVER: support.myGHL.com
           RS_PUB_KEY: hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ=
         run: |
-          # DIESER SCHRITT FIXT DEN C++ FEHLER DIREKT VOR DEM BUILD
-          Write-Host "Suche d3d11_output.cpp in den Plugins..."
-          $pluginFiles = Get-ChildItem -Path "flutter/windows/flutter/ephemeral" -Filter "d3d11_output.cpp" -Recurse
-          
-          foreach ($file in $pluginFiles) {
-              Write-Host "Patching: $($file.FullName)"
-              $content = Get-Content $file.FullName
-              if ($content[0] -notmatch "#include <chrono>") {
-                  $newContent = @("#include <chrono>", "#include <ratio>") + $content
-                  $newContent | Set-Content $file.FullName -Encoding UTF8
-                  Write-Host "Erfolgreich gepatcht."
-              }
+          # d3d11-Patch: JETZT anwenden, da flutter pub get die Plugin-Quellen 
+          # im Pub-Cache registriert hat. Wir patchen das dart_windows Plugin direkt.
+          $pubCache = (flutter pub cache path 2>$null)
+          if (-not $pubCache) { $pubCache = "$env:LOCALAPPDATA\Pub\Cache" }
+          $d3dFiles = Get-ChildItem -Path $pubCache -Filter "d3d11_output.cpp" -Recurse -ErrorAction SilentlyContinue
+          foreach ($file in $d3dFiles) {
+            $content = Get-Content $file.FullName -Raw
+            if ($content -notmatch "#include <chrono>") {
+              $patched = "#include <chrono>`n#include <ratio>`n" + $content
+              [System.IO.File]::WriteAllText($file.FullName, $patched, [System.Text.Encoding]::UTF8)
+              Write-Host "Gepatcht: $($file.FullName)"
+            }
           }
 
-          # Jetzt den Build starten
-          python build.py --portable --flutter
+          cd flutter
+          flutter build windows --release
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Flutter build fehlgeschlagen!"
+            exit 1
+          }
+          cd ..
 
-      - name: Prepare Artifact
+          $buildDir = "flutter\build\windows\x64\runner\Release"
+          Copy-Item "target\release\deps\dylib_virtual_display.dll" $buildDir -Force
+          Write-Host "✓ Flutter Build + DLL-Kopie erfolgreich"
+
+      - name: Build Portable Installer
         shell: pwsh
+        env:
+          RENDEZVOUS_SERVER: support.myGHL.com
+          RS_PUB_KEY: hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ=
         run: |
-          $exe = Get-ChildItem -Path . -Filter "rustdesk.exe" -Recurse | Select-Object -First 1
-          if ($exe) {
-            Copy-Item -Path $exe.FullName -Destination "Support-GHL.exe"
-            Write-Host "Fertig: Support-GHL.exe"
+          $version = python -c @"
+          with open('Cargo.toml', encoding='utf-8') as f:
+              for line in f:
+                  if line.startswith('version'):
+                      print(line.split('=')[1].strip().strip('\"'))
+                      break
+          "@
+          Write-Host "Version: $version"
+
+          $flutterBuildDir = "${{ github.workspace }}\flutter\build\windows\x64\runner\Release"
+          $exePath = "$flutterBuildDir\rustdesk.exe"
+
+          cd libs\portable
+          pip install -r requirements.txt
+          python generate.py -f $flutterBuildDir -o . -e $exePath
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "generate.py fehlgeschlagen!"
+            exit 1
+          }
+          cd ..\..
+
+          # Packer-EXE finden und umbenennen
+          $packerSrc = "target\release\rustdesk-portable-packer.exe"
+          if (Test-Path $packerSrc) {
+            Copy-Item $packerSrc "Support-GHL.exe" -Force
           } else {
-            Write-Error "Build fehlgeschlagen, .exe nicht gefunden."
+            # Fallback: direkt rustdesk.exe aus dem Flutter-Build nehmen
+            Write-Host "Portable Packer nicht gefunden – nehme Flutter-Build direkt"
+            Copy-Item $exePath "Support-GHL.exe" -Force
+          }
+
+          if (Test-Path "Support-GHL.exe") {
+            Write-Host "✓ Support-GHL.exe erstellt"
+          } else {
+            Write-Error "Support-GHL.exe nicht gefunden!"
             exit 1
           }
 
