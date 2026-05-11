@@ -62,13 +62,25 @@ jobs:
             aom:x64-windows-static
           echo "VCPKG_ROOT=${{ github.workspace }}\vcpkg" >> $env:GITHUB_ENV
 
-      - name: Flutter pub get
-        shell: pwsh
-        run: |
-          cd flutter
-          flutter pub get
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cd ..
+    - name: Flutter pub get
+            shell: pwsh
+            run: |
+              cd flutter
+    
+              # extended_text 14.0.0 braucht Dart >=3.5.0, Flutter 3.19.6 hat nur 3.3.4
+              # -> auf kompatible Version pinnen
+              $pubspec = Get-Content pubspec.yaml -Raw
+              if ($pubspec -notmatch "dependency_overrides:") {
+                $pubspec += "`ndependency_overrides:`n  extended_text: 13.0.0`n  extended_text_field: 13.0.0`n"
+              } else {
+                # Falls dependency_overrides schon da ist, Einträge hinzufügen
+                $pubspec = $pubspec -replace "(dependency_overrides:\s*\r?\n)", "`$1  extended_text: 13.0.0`n  extended_text_field: 13.0.0`n"
+              }
+              Set-Content pubspec.yaml $pubspec -Encoding UTF8
+    
+              flutter pub get
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              cd ..
 
       - name: Build virtual display DLL
         shell: pwsh
