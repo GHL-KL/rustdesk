@@ -26,8 +26,6 @@ jobs:
           with open(path, encoding="utf-8") as f:
               content = f.read()
 
-          original = content
-
           # RENDEZVOUS_SERVERS ersetzen
           content = re.sub(
               r'(pub const RENDEZVOUS_SERVERS: &\[&str\] = &\[)[^\]]*(\];)',
@@ -52,7 +50,6 @@ jobs:
 
           if "support.myghl.com" not in content:
               print("FEHLER: RENDEZVOUS_SERVERS Patch hat nicht funktioniert!", file=sys.stderr)
-              print("Aktuelle RENDEZVOUS_SERVERS-Zeilen:")
               for i, line in enumerate(content.splitlines()):
                   if "RENDEZVOUS" in line:
                       print(f"  Zeile {i}: {line}")
@@ -89,7 +86,7 @@ jobs:
         id: cache-vcpkg
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/vcpkg
+          path: ${{ github.workspace }}\vcpkg
           key: vcpkg-win-146-120deac3
 
       - name: Setup VCPKG
@@ -103,7 +100,7 @@ jobs:
             Set-Location ..
           }
           .\vcpkg\vcpkg.exe install --classic libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
-          Add-Content $env:GITHUB_ENV "VCPKG_ROOT=${{ github.workspace }}/vcpkg"
+          Add-Content $env:GITHUB_ENV "VCPKG_ROOT=${{ github.workspace }}\vcpkg"
 
       - name: Flutter pub get
         shell: pwsh
@@ -145,7 +142,7 @@ jobs:
       - name: Build Rust Library
         shell: pwsh
         env:
-          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+          VCPKG_ROOT: ${{ github.workspace }}\vcpkg
           LIBCLANG_PATH: C:\Program Files\LLVM\bin
           RENDEZVOUS_SERVER: support.myghl.com
           RS_PUB_KEY: hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ=
@@ -158,7 +155,7 @@ jobs:
       - name: Build Flutter Windows
         shell: pwsh
         env:
-          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+          VCPKG_ROOT: ${{ github.workspace }}\vcpkg
           RENDEZVOUS_SERVER: support.myghl.com
           RS_PUB_KEY: hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ=
         run: |
@@ -200,8 +197,18 @@ jobs:
           if (-not (Test-Path "Support-GHL.exe")) { Write-Error "Support-GHL.exe fehlt!"; exit 1 }
           Write-Host "Support-GHL.exe erstellt"
 
+      - name: Paket mit Server-Config erstellen
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "GHL-Support-Paket" -Force
+          $config = "rendezvous_server = `"support.myghl.com`"`nnat_type = 1`nserial = 0`n"
+          Set-Content "GHL-Support-Paket\RustDesk2.toml" $config -Encoding UTF8
+          Copy-Item "Support-GHL.exe" "GHL-Support-Paket\Support-GHL.exe"
+          Write-Host "Paket-Inhalt:"
+          Get-ChildItem "GHL-Support-Paket"
+
       - name: Upload Support Client
         uses: actions/upload-artifact@v4
         with:
           name: Support-GHL-Windows
-          path: Support-GHL.exe
+          path: GHL-Support-Paket\
