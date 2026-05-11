@@ -62,25 +62,20 @@ jobs:
             aom:x64-windows-static
           echo "VCPKG_ROOT=${{ github.workspace }}\vcpkg" >> $env:GITHUB_ENV
 
-    - name: Flutter pub get
-            shell: pwsh
-            run: |
-              cd flutter
-    
-              # extended_text 14.0.0 braucht Dart >=3.5.0, Flutter 3.19.6 hat nur 3.3.4
-              # -> auf kompatible Version pinnen
-              $pubspec = Get-Content pubspec.yaml -Raw
-              if ($pubspec -notmatch "dependency_overrides:") {
-                $pubspec += "`ndependency_overrides:`n  extended_text: 13.0.0`n  extended_text_field: 13.0.0`n"
-              } else {
-                # Falls dependency_overrides schon da ist, Einträge hinzufügen
-                $pubspec = $pubspec -replace "(dependency_overrides:\s*\r?\n)", "`$1  extended_text: 13.0.0`n  extended_text_field: 13.0.0`n"
-              }
-              Set-Content pubspec.yaml $pubspec -Encoding UTF8
-    
-              flutter pub get
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              cd ..
+      - name: Flutter pub get
+        shell: pwsh
+        run: |
+          cd flutter
+          $pubspec = Get-Content pubspec.yaml -Raw
+          if ($pubspec -notmatch "dependency_overrides:") {
+            $pubspec += "`ndependency_overrides:`n  extended_text: 13.0.0`n  extended_text_field: 13.0.0`n"
+          } else {
+            $pubspec = $pubspec -replace "(dependency_overrides:\s*\r?\n)", "`$1  extended_text: 13.0.0`n  extended_text_field: 13.0.0`n"
+          }
+          Set-Content pubspec.yaml $pubspec -Encoding UTF8
+          flutter pub get
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cd ..
 
       - name: Build virtual display DLL
         shell: pwsh
@@ -116,10 +111,7 @@ jobs:
           RENDEZVOUS_SERVER: support.myGHL.com
           RS_PUB_KEY: hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ=
         run: |
-          # d3d11-Patch: JETZT anwenden, da flutter pub get die Plugin-Quellen 
-          # im Pub-Cache registriert hat. Wir patchen das dart_windows Plugin direkt.
-          $pubCache = (flutter pub cache path 2>$null)
-          if (-not $pubCache) { $pubCache = "$env:LOCALAPPDATA\Pub\Cache" }
+          $pubCache = "$env:LOCALAPPDATA\Pub\Cache"
           $d3dFiles = Get-ChildItem -Path $pubCache -Filter "d3d11_output.cpp" -Recurse -ErrorAction SilentlyContinue
           foreach ($file in $d3dFiles) {
             $content = Get-Content $file.FullName -Raw
@@ -129,7 +121,6 @@ jobs:
               Write-Host "Gepatcht: $($file.FullName)"
             }
           }
-
           cd flutter
           flutter build windows --release
           if ($LASTEXITCODE -ne 0) {
@@ -137,7 +128,6 @@ jobs:
             exit 1
           }
           cd ..
-
           $buildDir = "flutter\build\windows\x64\runner\Release"
           Copy-Item "target\release\deps\dylib_virtual_display.dll" $buildDir -Force
           Write-Host "✓ Flutter Build + DLL-Kopie erfolgreich"
@@ -148,18 +138,16 @@ jobs:
           RENDEZVOUS_SERVER: support.myGHL.com
           RS_PUB_KEY: hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ=
         run: |
-          $version = python -c @"
+          $version = python -c "
           with open('Cargo.toml', encoding='utf-8') as f:
               for line in f:
                   if line.startswith('version'):
-                      print(line.split('=')[1].strip().strip('\"'))
+                      print(line.split('=')[1].strip().strip(chr(34)))
                       break
-          "@
+          "
           Write-Host "Version: $version"
-
           $flutterBuildDir = "${{ github.workspace }}\flutter\build\windows\x64\runner\Release"
           $exePath = "$flutterBuildDir\rustdesk.exe"
-
           cd libs\portable
           pip install -r requirements.txt
           python generate.py -f $flutterBuildDir -o . -e $exePath
@@ -168,23 +156,18 @@ jobs:
             exit 1
           }
           cd ..\..
-
-          # Packer-EXE finden und umbenennen
           $packerSrc = "target\release\rustdesk-portable-packer.exe"
           if (Test-Path $packerSrc) {
             Copy-Item $packerSrc "Support-GHL.exe" -Force
           } else {
-            # Fallback: direkt rustdesk.exe aus dem Flutter-Build nehmen
             Write-Host "Portable Packer nicht gefunden – nehme Flutter-Build direkt"
             Copy-Item $exePath "Support-GHL.exe" -Force
           }
-
-          if (Test-Path "Support-GHL.exe") {
-            Write-Host "✓ Support-GHL.exe erstellt"
-          } else {
+          if (-not (Test-Path "Support-GHL.exe")) {
             Write-Error "Support-GHL.exe nicht gefunden!"
             exit 1
           }
+          Write-Host "✓ Support-GHL.exe erstellt"
 
       - name: Upload Support Client
         uses: actions/upload-artifact@v4
