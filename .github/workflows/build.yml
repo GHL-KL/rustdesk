@@ -69,7 +69,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.6'
+          flutter-version: '3.24.5'
           channel: 'stable'
           cache: true
 
@@ -109,11 +109,6 @@ jobs:
         shell: pwsh
         run: |
           Set-Location flutter
-          $pubspec = Get-Content pubspec.yaml -Raw
-          if ($pubspec -notmatch "dependency_overrides:") {
-            $pubspec += "`ndependency_overrides:`n  extended_text: 13.0.0`n  extended_text_field: 13.0.0`n"
-            Set-Content pubspec.yaml $pubspec -Encoding UTF8
-          }
           flutter pub get
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Set-Location ..
