@@ -12,6 +12,31 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Patch Server Config
+        shell: pwsh
+        run: |
+          $file = "libs\hbb_common\src\config.rs"
+          $content = Get-Content $file -Raw
+
+          # RENDEZVOUS_SERVERS setzen
+          $content = $content -replace `
+            '(?s)(pub const RENDEZVOUS_SERVERS: &\[&str\] = &\[).*?(\];)', `
+            '$1"support.myghl.com"$2'
+
+          # RS_PUB_KEY als Fallback setzen (falls option_env leer)
+          $content = $content -replace `
+            '(?s)(pub const RS_PUB_KEY: &str = match option_env!\("RS_PUB_KEY"\) \{.*?_ => ").*?(".*?\};)', `
+            '${1}hKOqglvkNEtXCHSaxWQ4685okjzNUsVrSYk7EeHk9sQ=${2}'
+
+          Set-Content $file $content -Encoding UTF8
+
+          if ((Get-Content $file -Raw) -match "support\.myghl\.com") {
+            Write-Host "✓ Server-Config gepatcht"
+          } else {
+            Write-Error "Patch fehlgeschlagen - config.rs Struktur hat sich geändert!"
+            exit 1
+          }
+          
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
